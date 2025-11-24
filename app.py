@@ -22,8 +22,8 @@ st.markdown("Model dynamically loads from GitHub. No upload required.")
 # ---------------------------
 # Load model + features directly from GitHub
 # ---------------------------
-MODEL_URL = "https://raw.githubusercontent.com/yourname/yourrepo/main/HR_Attrition_Model_20251124_221832.pkl"
-FEATURES_URL = "https://raw.githubusercontent.com/yourname/yourrepo/main/HR_Model_Features_20251124_221832.pkl"
+MODEL_URL = "https://raw.githubusercontent.com/Karim-killer14/hrattritionmodeldeploy/main/HR_Attrition_Model_20251124_221832.pkl"
+FEATURES_URL = "https://raw.githubusercontent.com/Karim-killer14/hrattritionmodeldeploy/main/HR_Model_Features_20251124_221832.pkl"
 
 st.sidebar.header("Model Load Status")
 model = None
