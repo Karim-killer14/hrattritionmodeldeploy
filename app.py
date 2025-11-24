@@ -1,8 +1,9 @@
-# streamlit_deploy_app.py (UPDATED WITH FULL PREPROCESSING)
+# streamlit_deploy_app.py (FINAL VERSION)
 """
 Streamlit App for Deployment of HR Attrition Model
 Loads model + feature list directly from GitHub.
 Accepts simple HR CSV and transforms it into the full engineered feature set.
+Adds employee-level prediction table with color coding + threshold slider.
 """
 
 import streamlit as st
@@ -11,7 +12,6 @@ import numpy as np
 import pickle
 import requests
 import io
-import re
 
 st.set_page_config(page_title="HR Attrition Predictor", layout="wide")
 
@@ -90,30 +90,26 @@ def preprocess_for_model(df_raw, features_list):
         else:
             out[sanitized] = 0
 
-    # Derived features (best-effort formulas)
-    # -------------------------------------------------------
+    # -------- Derived features --------
 
-    # Total overtime hours
+    # Total Overtime Hours
     if 'Total_Overtime_Hours' in features_list:
-        if 'Total_Overtime_Hours' in df.columns:
-            out['Total_Overtime_Hours'] = safe_num(df['Total_Overtime_Hours']).fillna(0)
-        else:
-            out['Total_Overtime_Hours'] = (
-                safe_num(df.get('Day_Overtime_Hours', 0)) +
-                safe_num(df.get('Night_Overtime_Hours', 0))
-            )
+        out['Total_Overtime_Hours'] = (
+            safe_num(df.get('Day_Overtime_Hours', 0)) +
+            safe_num(df.get('Night_Overtime_Hours', 0))
+        )
 
     # Overtime Ratio
     if 'Overtime_Ratio' in features_list:
         denom = safe_num(df.get('No_of_Working_Days', 1)).replace(0, 1)
-        out['Overtime_Ratio'] = out.get('Total_Overtime_Hours', 0) / denom
+        out['Overtime_Ratio'] = out['Total_Overtime_Hours'] / denom
 
     # Extra Hours Percentage
     if 'Extra_Hours_Percentage' in features_list:
         typical_day_hours = 8
         denom = safe_num(df.get('No_of_Working_Days', 1)) * typical_day_hours
         denom = denom.replace(0, 1)
-        out['Extra_Hours_Percentage'] = out.get('Total_Overtime_Hours', 0) / denom
+        out['Extra_Hours_Percentage'] = out['Total_Overtime_Hours'] / denom
 
     # Absenteeism Rate
     if 'Absenteeism_Rate' in features_list:
@@ -150,7 +146,7 @@ def preprocess_for_model(df_raw, features_list):
         dur = safe_num(df.get('Duration', 0))
         out['Years_At_Company'] = dur / 12
 
-    # Dept Avg Salary (fallback)
+    # Dept Avg Salary
     if 'Dept_Avg_Salary' in features_list:
         out['Dept_Avg_Salary'] = safe_num(df.get('Gross_Salary', 0))
 
@@ -164,24 +160,15 @@ def preprocess_for_model(df_raw, features_list):
 
     # Engagement Score (fallback)
     if 'Engagement_Score' in features_list:
-        if 'Engagement_Score' in df.columns:
-            out['Engagement_Score'] = safe_num(df['Engagement_Score'])
-        else:
-            out['Engagement_Score'] = 0
+        out['Engagement_Score'] = safe_num(df.get('Engagement_Score', 0))
 
-    # -------------------------------------------------------
-    # FINAL STEP: Ensure *ALL* required features exist
-    # -------------------------------------------------------
+    # -------- Ensure all model-required features exist --------
     for col in features_list:
         if col not in out.columns:
             out[col] = 0.0
 
-    # Reorder to match model input
     out = out[features_list]
-
-    # clean missing values
     out = out.fillna(0).astype(float)
-
     return out
 
 # ---------------------------
@@ -203,22 +190,50 @@ if model is not None and features is not None and mode == "Upload CSV for Batch 
         # Convert simple CSV → model features
         df_model_ready = preprocess_for_model(df_raw, features)
 
-        st.write("### Engineered Feature Matrix (Model Input)")
-        st.dataframe(df_model_ready.head())
-
-        # Predict
+        # Predict probabilities
         if hasattr(model, "predict_proba"):
             df_raw["Attrition_Probability"] = model.predict_proba(df_model_ready)[:, 1]
         else:
             df_raw["Attrition_Probability"] = model.predict(df_model_ready)
 
-        st.success("Predictions generated successfully!")
-        st.dataframe(df_raw)
+        # ------------------------------------------
+        # Employee-Level Summary Section
+        # ------------------------------------------
+        st.subheader("📌 Employee-Level Attrition Summary")
 
+        # Threshold slider
+        threshold = st.slider("Select Attrition Risk Threshold", 0.1, 0.9, 0.5, 0.05)
+
+        df_raw["Attrition_Status"] = df_raw["Attrition_Probability"].apply(
+            lambda x: "WILL LEAVE" if x >= threshold else "WILL STAY"
+        )
+
+        # Identify employee ID column
+        id_col = None
+        for col in ["Employee_ID", "employee_id", "Emp_ID", "ID"]:
+            if col in df_raw.columns:
+                id_col = col
+                break
+
+        if id_col is None:
+            df_raw["Employee_ID"] = range(1, len(df_raw) + 1)
+            id_col = "Employee_ID"
+
+        summary_df = df_raw[[id_col, "Attrition_Probability", "Attrition_Status"]].copy()
+        summary_df["Attrition_Probability"] = summary_df["Attrition_Probability"].round(3)
+
+        # Color coding
+        def color_status(val):
+            return "background-color: #ff9999" if val == "WILL LEAVE" else "background-color: #b3ffcc"
+
+        st.write("### 🧾 Prediction Table")
+        st.dataframe(summary_df.style.applymap(color_status, subset=["Attrition_Status"]))
+
+        # Download button
         st.download_button(
-            "📥 Download Predictions",
-            data=df_raw.to_csv(index=False),
-            file_name="attrition_predictions.csv"
+            "📥 Download Employee-Level Summary",
+            data=summary_df.to_csv(index=False),
+            file_name="employee_attrition_summary.csv"
         )
 
 # ---------------------------
