@@ -21,11 +21,36 @@ st.title("🚀 HR Attrition Prediction App")
 st.markdown("Upload the saved model + features to generate attrition predictions.")
 
 # ---------------------------
-# Upload model + features
+# Load model + features directly from GitHub
 # ---------------------------
-st.sidebar.header("Model Files")
-uploaded_model = st.sidebar.file_uploader("Upload Model (.pkl)", type=["pkl"])
-uploaded_features = st.sidebar.file_uploader("Upload Features (.pkl)", type=["pkl"])
+MODEL_URL = "https://raw.githubusercontent.com/yourname/yourrepo/main/HR_Attrition_Model_20251124_221832.pkl"
+FEATURE_URL = "https://raw.githubusercontent.com/yourname/yourrepo/main/HR_Model_Features_20251124_221832.pkl"
+
+import requests, tempfile
+
+st.sidebar.header("Model Load Status")
+model = None
+features = None
+
+try:
+    def fetch(url):
+        r = requests.get(url)
+        r.raise_for_status()
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            tmp.write(r.content)
+            return tmp.name
+
+    model_path = fetch(MODEL_URL)
+    feat_path = fetch(FEATURE_URL)
+
+    with open(model_path, "rb") as f:
+        model = pickle.load(f)
+    with open(feat_path, "rb") as f:
+        features = pickle.load(f)
+
+    st.sidebar.success("Model & features loaded successfully from GitHub!")
+except Exception as e:
+    st.sidebar.error(f"Error loading model from GitHub: {e}")
 
 # ---------------------------
 # Load model and feature list
